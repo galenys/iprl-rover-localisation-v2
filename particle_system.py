@@ -3,7 +3,7 @@ import numpy as np
 import random
 from math import pi, cos, sin
 
-# All units are in cm and radians (don't ask me to justify this)
+# All units are in cm and radians
 # Global position coordinates are in the form (x, y, z) where z is the height, the origin is the bottom left corner of the map
 # All orientation vectors are unit vectors on the sphere
 
