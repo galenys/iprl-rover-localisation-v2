@@ -1,3 +1,4 @@
+# Kind of works, hit or miss, YMMV (works on my machine)
 import cv2
 import cv2.aruco as aruco
 

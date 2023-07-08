@@ -1,20 +1,39 @@
 from typing import List
+import numpy as np
 import random
 from math import pi, cos, sin
 
-class Orientation:
+# All units are in cm and radians (don't ask me to justify this)
+# Global position coordinates are in the form (x, y, z) where z is the height, the origin is the bottom left corner of the map
+# All orientation vectors are unit vectors on the sphere
+
+class Vector3:
     def __init__(self, x, y, z) -> None:
-        # Stored as a point on the unit sphere
-        self.x = x
-        self.y = y
-        self.z = z
+        self.vector = np.array([x, y, z])
+
+    def __add__(self, o):
+        return self.vector + o.vector
+
+    def dotProduct(self, o):
+        return np.dot(self.vector, o.vector)
 
     def rotateZ(self, angle):
         # Rotate around the z-axis
-        return Orientation(
-            x=self.x * cos(angle) - self.y * sin(angle),
-            y=self.x * sin(angle) + self.y * cos(angle),
-            z=self.z
+        return np.array([
+            self.vector[0] * cos(angle) - self.vector[1] * sin(angle),
+            self.vector[0] * sin(angle) + self.vector[1] * cos(angle),
+            self.vector[2]
+        ])
+
+class Position(Vector3):
+    def __init__(self, x, y, z) -> None:
+        super().__init__(x, y, z)
+
+class Orientation(Vector3):
+    def __init__(self, x, y, z) -> None:
+        super().__init__(x, y, z)
+        # This is a unit vector on the sphere
+        assert(abs(self.vector.dotProduct(self.vector)-1) < 0.00000000000001)
 
 class PositionRange:
     def __init__(self, lower_x, upper_x, lower_y, upper_y, lower_z, upper_z) -> None:
@@ -26,25 +45,26 @@ class PositionRange:
         self.upper_z = upper_z
 
     def getRandomPosition(self):
-        return (
+        return Position(
             random.random() * (self.upper_x - self.lower_x) - self.lower_x,
             random.random() * (self.upper_y - self.lower_y) - self.lower_y,
             random.random() * (self.upper_z - self.lower_z) - self.lower_z,
         )
 
 class Observation:
-    def __init__(self, aruco_id, relative_distance, relative_rotation) -> None:
+    def __init__(self, aruco_id: str, relative_distance: float, relative_rotation: Orientation) -> None:
         self.aruco_id = aruco_id
         self.relative_distance = relative_distance
         self.relative_rotation = relative_rotation
 
 class Particle:
-    def __init__(self, position, orientation, weight) -> None:
+    def __init__(self, position: Position, orientation: Orientation, weight) -> None:
         self.position = position
+        self.orientation = orientation
         self.weight = weight
 
 class ArUco:
-    def __init__(self, aruco_id, position, orientation) -> None:
+    def __init__(self, aruco_id: str, position: Position, orientation: Orientation) -> None:
         self.aruco_id = aruco_id
         self.position = position
         self.orientation = orientation
@@ -103,6 +123,13 @@ class ParticleSystem:
 
         # The aruco codes have 4 faces, so we rotate the observed orientation 4 times around the z-axis to get 4 possible observed positions
         rotated_orientations = self.getRotatedOrientations(relative_rotation)
+        
+        # Now we calculate the estimated global positions and orientations that these observations would suggest
+        estimated_positions = []
+        estimated_orientations = []
+        # for rotated_orientation in rotated_orientations:
+            
+
         distance = self.getDistance(particle_position, estimated_position)
         return 1 / (distance + 1)
 
@@ -121,4 +148,4 @@ class ParticleSystem:
         x = random.random() * 2 - 1
         y = random.random() * 2 - 1
         z = random.random() * 2 - 1
-        return (x, y, z)
+        return Orientation(x, y, z)
