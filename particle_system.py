@@ -7,6 +7,12 @@ from math import pi, cos, sin
 # Global position coordinates are in the form (x, y, z) where z is the height, the origin is the bottom left corner of the map
 # All orientation vectors are unit vectors on the sphere
 
+def getRandomPointOnUnitSphere(self):
+    x = random.random() * 2 - 1
+    y = random.random() * 2 - 1
+    z = random.random() * 2 - 1
+    return Orientation(x, y, z)
+
 class Vector3:
     def __init__(self, x, y, z) -> None:
         self.vector = np.array([x, y, z])
@@ -14,16 +20,28 @@ class Vector3:
     def __add__(self, o):
         return self.vector + o.vector
 
+    def __sub__(self, o):
+        return self.vector - o.vector
+
     def dotProduct(self, o):
         return np.dot(self.vector, o.vector)
 
     def rotateZ(self, angle):
         # Rotate around the z-axis
-        return np.array([
+        self.vector = np.array([
             self.vector[0] * cos(angle) - self.vector[1] * sin(angle),
             self.vector[0] * sin(angle) + self.vector[1] * cos(angle),
             self.vector[2]
         ])
+        return self
+
+    def normalise(self):
+        self.vector /= np.linalg.norm(self.vector)
+        return self
+    
+    def scale(self, factor):
+        self.vector *= factor
+        return self
 
 class Position(Vector3):
     def __init__(self, x, y, z) -> None:
@@ -58,9 +76,8 @@ class Observation:
         self.relative_rotation = relative_rotation
 
 class Particle:
-    def __init__(self, position: Position, orientation: Orientation, weight) -> None:
+    def __init__(self, position: Position, weight) -> None:
         self.position = position
-        self.orientation = orientation
         self.weight = weight
 
 class ArUco:
@@ -77,7 +94,6 @@ class ParticleSystem:
             self.particles.append(
                 Particle(
                     position=position_range.getRandomPosition(),
-                    orientation=self.getRandomPointOnUnitSphere(),
                     weight=1/num_particles
                 )
             )
@@ -90,9 +106,8 @@ class ParticleSystem:
             for particle in self.particles:
                 aruco_position, aruco_orientation = self.aruco_map[observation.aruco_id]
                 particle_position = particle.position
-                particle_orientation = particle.orientation
                 likelihood = self.getLikelihood(
-                    particle_position, particle_orientation, aruco_position, aruco_orientation, observation.relative_position, observation.relative_distance
+                    particle_position, aruco_position, aruco_orientation, observation.relative_distance, observation.relative_distance
                 )
                 particle.weight *= likelihood
     
@@ -115,9 +130,8 @@ class ParticleSystem:
         self.particles = new_particles
 
 
-    def getLikelihood(self, particle_position, particle_orientation, aruco_position, aruco_orientation, relative_position, relative_rotation):
-        # Writing this as a longer comment because I can't be asked to write docs
-        # So there are a few variables here: the particle position/orientation(where we think we might be),
+    def getLikelihood(self, particle_position, aruco_position, aruco_orientation, relative_distance, relative_rotation):
+        # So there are a few variables here: the particle position(where we think we might be),
         # the observed relative distance and orientation of a given aruco marker(which we get from the camera),
         # and the known position of the aruco marker(which we know beforehand and load before we even start the program)
 
@@ -125,13 +139,13 @@ class ParticleSystem:
         rotated_orientations = self.getRotatedOrientations(relative_rotation)
         
         # Now we calculate the estimated global positions and orientations that these observations would suggest
-        estimated_positions = []
-        estimated_orientations = []
-        # for rotated_orientation in rotated_orientations:
-            
+        likelikhood = 1
+        for rotated_orientation in rotated_orientations:
+            estimated_position = aruco_position + (rotated_orientation + aruco_orientation).normalise().scale(relative_distance)
+            distance = (particle_position - estimated_position).dotProduct(particle_position - estimated_position)
+            likelikhood *= 1 / (distance + 1)
 
-        distance = self.getDistance(particle_position, estimated_position)
-        return 1 / (distance + 1)
+        return likelikhood
 
     def getRotatedOrientations(self, orientation):
         return (
@@ -144,8 +158,4 @@ class ParticleSystem:
     def getDistance(self, position1, position2):
         return (position1[0] - position2[0])**2 + (position1[1] - position2[1])**2 + (position1[2] - position2[2])**2
         
-    def getRandomPointOnUnitSphere(self):
-        x = random.random() * 2 - 1
-        y = random.random() * 2 - 1
-        z = random.random() * 2 - 1
-        return Orientation(x, y, z)
+    
