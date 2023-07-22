@@ -4,7 +4,7 @@ from requests.auth import HTTPDigestAuth
 import cv2
 import numpy as np
 
-url = "http://192.168.2.165/osc/commands/execute:"
+url = "http://192.168.1.1/osc/commands/execute"
 username = "THETAYP00153381.OSC"
 password = "00153381"
 
@@ -12,6 +12,7 @@ payload = {
     "name": "camera.getLivePreview"
 }
 
+# For testing
 payload2 = {
   "name": "camera.getOptions",
   "parameters": {
@@ -27,7 +28,7 @@ headers = {
     "Content-Type": "application/json;charset=utf-8"
 }
 
-response = requests.post(url, auth=HTTPDigestAuth(username, password), json=payload2, headers=headers, stream=True)
+response = requests.post(url, auth=HTTPDigestAuth(username, password), json=payload, headers=headers, stream=True)
 
 if response.status_code == 200:
     bytes_ = bytes()
