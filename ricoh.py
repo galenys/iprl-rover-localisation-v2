@@ -26,6 +26,32 @@ marker_preset_positions_and_directions = {
     8: np.array([[0, 0, 0], [1, 0, 0]])
 }
 
+def estimate_distance(marker_corner):
+    corner_spread = np.max(np.linalg.norm(marker_corner[0] - marker_corner[2]), np.linalg.norm(marker_corner[1] - marker_corner[3]))
+    distance = 1.0 / corner_spread
+    return distance
+
+def estimate_position_and_orientation(marker_corners, marker_ids):
+    potential_positions = []
+    for i in range(len(marker_ids)):
+        marker_id = marker_ids[i]
+        marker_corner = marker_corners[i]
+        if marker_id in marker_preset_positions_and_directions:
+            position, direction = marker_preset_positions_and_directions[marker_id]
+            distance = estimate_distance(marker_corner)
+            estimated_position = position + distance * direction
+            weight = 1.0 / np.abs(estimated_position)
+            potential_positions.append((weight, estimated_position, -direction))
+            
+    # Weighted average of positions and directions
+    sum_positions = np.zeros(3)
+    sum_directions = np.zeros(3)
+    for weight, position, direction in potential_positions:
+        sum_positions += weight * position
+        sum_directions += weight * direction
+
+    return sum_positions / np.sum(weight), sum_directions / np.sum(weight)
+
 if response.status_code == 200:
     bytes_ = bytes()
     for chunk in response.iter_content(chunk_size=1024):
