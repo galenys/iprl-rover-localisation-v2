@@ -82,6 +82,7 @@ if response.status_code == 200:
 
                 # Step 1: Detect markers
                 markerCorners, markerIds, rejectedCandidates = aruco.detectMarkers(img, dictionary)
+                img = aruco.drawDetectedMarkers(img, markerCorners, markerIds)
                 if markerIds is None:
                     continue
                 # Step 2: Get rotation and translation vectors
