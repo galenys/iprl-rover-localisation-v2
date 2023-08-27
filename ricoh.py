@@ -21,36 +21,51 @@ headers = {
 
 response = requests.post(url, auth=HTTPDigestAuth(username, password), json=payload, headers=headers, stream=True)
 
+# TODO: Calibrate camera
+camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]])
+distortion_coefficients = np.zeros((4, 1))
+
 # We would load this up with the information given on the day of the contest
 marker_preset_positions_and_directions = {
     8: np.array([[0, 0, 0], [1, 0, 0]])
 }
+parameters = cv2.aruco.DetectorParameters()
 
-def estimate_distance(marker_corner):
-    corner_spread = np.max(np.linalg.norm(marker_corner[0] - marker_corner[2]), np.linalg.norm(marker_corner[1] - marker_corner[3]))
-    distance = 1.0 / corner_spread
-    return distance
+def camera_pose_from_marker(rvecs, tvecs):
+    # Convert the rotation vector to a rotation matrix
+    R_marker2cam, _ = cv2.Rodrigues(rvecs[0])
+    
+    # Invert the transformation
+    R_cam2marker = np.transpose(R_marker2cam)
+    t_cam2marker = -np.dot(R_cam2marker, tvecs[0])
+    
+    return R_cam2marker, t_cam2marker
 
-def estimate_position_and_orientation(marker_corners, marker_ids):
-    potential_positions = []
-    for i in range(len(marker_ids)):
-        marker_id = marker_ids[i]
-        marker_corner = marker_corners[i]
-        if marker_id in marker_preset_positions_and_directions:
-            position, direction = marker_preset_positions_and_directions[marker_id]
-            distance = estimate_distance(marker_corner)
-            estimated_position = position + distance * direction
-            weight = 1.0 / np.abs(estimated_position)
-            potential_positions.append((weight, estimated_position, -direction))
-            
-    # Weighted average of positions and directions
-    sum_positions = np.zeros(3)
-    sum_directions = np.zeros(3)
-    for weight, position, direction in potential_positions:
-        sum_positions += weight * position
-        sum_directions += weight * direction
+def rotation_matrix_to_euler_angles(R):
+    # Compute yaw, pitch, roll
+    sy = np.sqrt(R[0,0] * R[0,0] + R[1,0] * R[1,0])
+    singular = sy < 1e-6
 
-    return sum_positions / np.sum(weight), sum_directions / np.sum(weight)
+    if not singular:
+        x = np.arctan2(R[2,1], R[2,2])
+        y = np.arctan2(-R[2,0], sy)
+        z = np.arctan2(R[1,0], R[0,0])
+    else:
+        x = np.arctan2(-R[1,2], R[1,1])
+        y = np.arctan2(-R[2,0], sy)
+        z = 0
+
+    return np.array([x, y, z])  # Pitch, Yaw, Roll
+
+def detect_and_estimate_pose(image, corners, ids):
+    # Draw detected markers (for visualization)
+    cv2.aruco.drawDetectedMarkers(image, corners, ids)
+    
+    # Assuming the marker size is 0.15 meters (adjust as necessary)
+    marker_size = 0.15
+    rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, marker_size, camera_matrix, distortion_coefficients)
+    
+    return rvecs, tvecs
 
 if response.status_code == 200:
     bytes_ = bytes()
@@ -60,13 +75,23 @@ if response.status_code == 200:
             a = bytes_.find(b'\xff\xd8')
             b = bytes_.find(b'\xff\xd9')
             if a != -1 and b != -1:
+                # Some byte stuff I don't understand, the bottom line is we have the image
                 jpg = bytes_[a:b+2]
                 bytes_ = bytes_[b+2:]
                 img = cv2.imdecode(np.fromstring(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
 
+                # Step 1: Detect markers
                 markerCorners, markerIds, rejectedCandidates = aruco.detectMarkers(img, dictionary)
-                # print(markerCorners, markerIds)
-                img = aruco.drawDetectedMarkers(img, markerCorners, markerIds)
+                if markerIds is None:
+                    continue
+                # Step 2: Get rotation and translation vectors
+                rvecs, tvecs = detect_and_estimate_pose(img, markerCorners, markerIds)
+                # print(rvecs, tvecs)
+                # Step 3: Get camera pose
+                R_cam, t_cam = camera_pose_from_marker(rvecs[0], tvecs[0])
+                euler_angles = rotation_matrix_to_euler_angles(R_cam)
+                print(t_cam, euler_angles)
+
                 cv2.imshow("Preview", img)
                 if cv2.waitKey(1) == 27:
                     break
