@@ -22,7 +22,6 @@ headers = {
 
 response = requests.post(url, auth=HTTPDigestAuth(username, password), json=payload, headers=headers, stream=True, verify=False)
 
-# TODO: Calibrate camera
 camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]])
 distortion_coefficients = np.zeros((4, 1))
 
