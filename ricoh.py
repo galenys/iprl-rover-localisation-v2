@@ -3,7 +3,6 @@ from requests.auth import HTTPDigestAuth
 import cv2
 import cv2.aruco as aruco
 import numpy as np
-from time import sleep
 
 dictionary = aruco.getPredefinedDictionary(aruco.DICT_6X6_250)
 parameters =  aruco.DetectorParameters()
@@ -29,8 +28,8 @@ distortion_coefficients = np.zeros((4, 1))
 
 # We would load this up with the information given on the day of the contest
 marker_preset_positions_and_directions = {
-    8: np.array([[0, 0, 0], [1, 0, 0]]),
-    23: np.array([[0, 0, 0], [1, 0, 0]]),
+    8: np.array([[0, 0, 0], [1, 0, 0]], dtype=np.float64),
+    23: np.array([[0, 0, 0], [1, 0, 0]], dtype=np.float64),
 }
 parameters = cv2.aruco.DetectorParameters()
 
@@ -74,7 +73,7 @@ def detect_and_estimate_pose(image, corners, ids):
     
     # Assuming the marker size is 0.15 meters (adjust as necessary)
     marker_size = 0.15
-    rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarker(corners, marker_size, camera_matrix, distortion_coefficients)
+    rvecs, tvecs, _ = aruco.estimatePoseSingleMarkers(corners, marker_size, camera_matrix, distortion_coefficients)
     
     return rvecs, tvecs
 
@@ -121,7 +120,7 @@ if response.status_code == 200:
                             known_marker_position, known_marker_orientation = known_marker_position
                             rvecs, tvecs = detect_and_estimate_pose(img, markerCorners, markerIds)
 
-                            R_cam, t_cam = camera_pose_from_marker(rvecs[1], tvecs[1], known_marker_position, known_marker_orientation)
+                            R_cam, t_cam = camera_pose_from_marker(rvecs, tvecs, known_marker_position, known_marker_orientation)
                             euler_angles = rotation_matrix_to_euler_angles(R_cam)
                             poses.append((t_cam, euler_angles))
                             print(t_cam, euler_angles)
