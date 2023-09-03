@@ -6,6 +6,8 @@ import numpy as np
 from time import sleep
 
 dictionary = aruco.getPredefinedDictionary(aruco.DICT_6X6_250)
+parameters =  aruco.DetectorParameters()
+detector = aruco.ArucoDetector(dictionary, parameters)
 
 url = "http://192.168.1.1/osc/commands/execute"
 username = "THETAYP00153381.OSC"
@@ -19,7 +21,7 @@ headers = {
     "Content-Type": "application/json;charset=utf-8"
 }
 
-response = requests.post(url, auth=HTTPDigestAuth(username, password), json=payload, headers=headers, stream=True)
+response = requests.post(url, auth=HTTPDigestAuth(username, password), json=payload, headers=headers, stream=True, verify=False)
 
 # TODO: Calibrate camera
 camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]])
@@ -27,19 +29,28 @@ distortion_coefficients = np.zeros((4, 1))
 
 # We would load this up with the information given on the day of the contest
 marker_preset_positions_and_directions = {
-    8: np.array([[0, 0, 0], [1, 0, 0]])
+    8: np.array([[0, 0, 0], [1, 0, 0]]),
+    23: np.array([[0, 0, 0], [1, 0, 0]]),
 }
 parameters = cv2.aruco.DetectorParameters()
 
-def camera_pose_from_marker(rvecs, tvecs):
+def camera_pose_from_marker(rvecs, tvecs, known_marker_position, known_marker_orientation):
     # Convert the rotation vector to a rotation matrix
-    R_marker2cam, _ = cv2.Rodrigues(rvecs[0])
+    R_marker2cam, _ = cv2.Rodrigues(rvecs)
+    
+    # Apply known marker orientation (if provided)
+    R_known_marker_orientation, _ = cv2.Rodrigues(known_marker_orientation)
+    R_marker2world = np.dot(R_known_marker_orientation, np.transpose(R_marker2cam))
     
     # Invert the transformation
     R_cam2marker = np.transpose(R_marker2cam)
-    t_cam2marker = -np.dot(R_cam2marker, tvecs[0])
+    t_cam2marker = -np.dot(R_cam2marker, tvecs)
     
-    return R_cam2marker, t_cam2marker
+    # Calculate camera pose in world coordinate system
+    R_cam2world = np.transpose(R_marker2world)
+    t_cam2world = np.dot(-R_cam2world, known_marker_position) + t_cam2marker
+    
+    return R_cam2world, t_cam2world
 
 def rotation_matrix_to_euler_angles(R):
     # Compute yaw, pitch, roll
@@ -63,9 +74,26 @@ def detect_and_estimate_pose(image, corners, ids):
     
     # Assuming the marker size is 0.15 meters (adjust as necessary)
     marker_size = 0.15
-    rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, marker_size, camera_matrix, distortion_coefficients)
+    rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarker(corners, marker_size, camera_matrix, distortion_coefficients)
     
     return rvecs, tvecs
+
+def most_likely_pose(poses):
+    # Assume len(poses) > 1
+
+    # Can be fine tuned
+    epsilon = 1
+    highest_similar_position_count = -1
+    most_likely = None
+    for i, (position1, orientation1) in enumerate(poses):
+        similar_positions = 0
+        for j, (position2, orientation2) in enumerate(poses):
+            if i != j and np.abs(position1 - position2) < epsilon:
+               similar_positions += 1 
+        if similar_positions > highest_similar_position_count:
+            highest_similar_position_count = similar_positions
+            most_likely = (position1, orientation1)
+    return most_likely
 
 if response.status_code == 200:
     bytes_ = bytes()
@@ -80,18 +108,26 @@ if response.status_code == 200:
                 bytes_ = bytes_[b+2:]
                 img = cv2.imdecode(np.fromstring(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
 
-                # Step 1: Detect markers
-                markerCorners, markerIds, rejectedCandidates = aruco.detectMarkers(img, dictionary)
+                markerCorners, markerIds, rejectedCandidates = detector.detectMarkers(img)
                 img = aruco.drawDetectedMarkers(img, markerCorners, markerIds)
-                if markerIds is None:
-                    continue
-                # Step 2: Get rotation and translation vectors
-                rvecs, tvecs = detect_and_estimate_pose(img, markerCorners, markerIds)
-                # print(rvecs, tvecs)
-                # Step 3: Get camera pose
-                R_cam, t_cam = camera_pose_from_marker(rvecs[0], tvecs[0])
-                euler_angles = rotation_matrix_to_euler_angles(R_cam)
-                print(t_cam, euler_angles)
+                
+                poses = []
+                if markerIds is not None:
+                    print(markerIds)
+                    for i, marker_id in enumerate(markerIds.ravel()):
+                        known_marker_position = marker_preset_positions_and_directions.get(marker_id, None)
+                        if known_marker_position is not None:
+
+                            known_marker_position, known_marker_orientation = known_marker_position
+                            rvecs, tvecs = detect_and_estimate_pose(img, markerCorners, markerIds)
+
+                            R_cam, t_cam = camera_pose_from_marker(rvecs[1], tvecs[1], known_marker_position, known_marker_orientation)
+                            euler_angles = rotation_matrix_to_euler_angles(R_cam)
+                            poses.append((t_cam, euler_angles))
+                            print(t_cam, euler_angles)
+                if poses:
+                    # This is where we would send it over the network. Otherwise send None
+                    print(most_likely_pose(poses))
 
                 cv2.imshow("Preview", img)
                 if cv2.waitKey(1) == 27:
