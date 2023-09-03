@@ -34,6 +34,12 @@ marker_preset_positions_and_directions = {
 parameters = cv2.aruco.DetectorParameters()
 
 def camera_pose_from_marker(rvecs, tvecs, known_marker_position, known_marker_orientation):
+    # Flatten the arrays to shape (3,)
+    rvecs = rvecs.flatten()
+    tvecs = tvecs.flatten()
+    known_marker_position = known_marker_position.flatten()
+    known_marker_orientation = known_marker_orientation.flatten()
+
     # Convert the rotation vector to a rotation matrix
     R_marker2cam, _ = cv2.Rodrigues(rvecs)
     
@@ -43,13 +49,13 @@ def camera_pose_from_marker(rvecs, tvecs, known_marker_position, known_marker_or
     
     # Invert the transformation
     R_cam2marker = np.transpose(R_marker2cam)
-    t_cam2marker = -np.dot(R_cam2marker, tvecs)
+    t_cam2marker = -np.dot(R_cam2marker, tvecs.reshape(-1, 1))  # tvecs must be column vector for dot product
     
     # Calculate camera pose in world coordinate system
     R_cam2world = np.transpose(R_marker2world)
-    t_cam2world = np.dot(-R_cam2world, known_marker_position) + t_cam2marker
+    t_cam2world = np.dot(-R_cam2world, known_marker_position.reshape(-1, 1)) + t_cam2marker  # known_marker_position must be column vector for dot product
     
-    return R_cam2world, t_cam2world
+    return R_cam2world, t_cam2world.flatten()  # flatten t_cam2world for consistency
 
 def rotation_matrix_to_euler_angles(R):
     # Compute yaw, pitch, roll
@@ -86,7 +92,7 @@ def most_likely_pose(poses):
     most_likely = None
     for i, (position1, orientation1) in enumerate(poses):
         similar_positions = 0
-        for j, (position2, orientation2) in enumerate(poses):
+        for j, (position2, _) in enumerate(poses):
             if i != j and np.abs(position1 - position2) < epsilon:
                similar_positions += 1 
         if similar_positions > highest_similar_position_count:
@@ -112,19 +118,20 @@ if response.status_code == 200:
                 
                 poses = []
                 if markerIds is not None:
-                    print(markerIds)
+                    # print(markerIds)
                     for i, marker_id in enumerate(markerIds.ravel()):
-                        known_marker_position = marker_preset_positions_and_directions.get(marker_id, None)
-                        if known_marker_position is not None:
+                        known_marker_pose = marker_preset_positions_and_directions.get(marker_id, None)
+                        if known_marker_pose is not None:
 
-                            known_marker_position, known_marker_orientation = known_marker_position
+                            known_marker_position, known_marker_orientation = known_marker_pose[0], known_marker_pose[1]
                             rvecs, tvecs = detect_and_estimate_pose(img, markerCorners, markerIds)
 
                             R_cam, t_cam = camera_pose_from_marker(rvecs, tvecs, known_marker_position, known_marker_orientation)
                             euler_angles = rotation_matrix_to_euler_angles(R_cam)
                             poses.append((t_cam, euler_angles))
-                            print(t_cam, euler_angles)
+                            # print(t_cam, euler_angles)
                 if poses:
+                    # This is a tuple of (position, orientation)
                     # This is where we would send it over the network. Otherwise send None
                     print(most_likely_pose(poses))
 
